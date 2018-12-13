@@ -29,10 +29,10 @@ import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.resources.ConnectionProvider;
 import reactor.netty.tcp.ProxyProvider;
-import reactor.netty.tcp.SslProvider;
 import rx.RxReactiveStreams;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.actuate.autoconfigure.endpoint.condition.ConditionalOnEnabledEndpoint;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
@@ -58,6 +58,7 @@ import org.springframework.cloud.gateway.filter.WeightCalculatorWebFilter;
 import org.springframework.cloud.gateway.filter.factory.AddRequestHeaderGatewayFilterFactory;
 import org.springframework.cloud.gateway.filter.factory.AddRequestParameterGatewayFilterFactory;
 import org.springframework.cloud.gateway.filter.factory.AddResponseHeaderGatewayFilterFactory;
+import org.springframework.cloud.gateway.filter.factory.FallbackHeadersGatewayFilterFactory;
 import org.springframework.cloud.gateway.filter.factory.GatewayFilterFactory;
 import org.springframework.cloud.gateway.filter.factory.HystrixGatewayFilterFactory;
 import org.springframework.cloud.gateway.filter.factory.PrefixPathGatewayFilterFactory;
@@ -70,6 +71,7 @@ import org.springframework.cloud.gateway.filter.factory.RequestRateLimiterGatewa
 import org.springframework.cloud.gateway.filter.factory.RequestSizeGatewayFilterFactory;
 import org.springframework.cloud.gateway.filter.factory.RetryGatewayFilterFactory;
 import org.springframework.cloud.gateway.filter.factory.RewritePathGatewayFilterFactory;
+import org.springframework.cloud.gateway.filter.factory.RewriteResponseHeaderGatewayFilterFactory;
 import org.springframework.cloud.gateway.filter.factory.SaveSessionGatewayFilterFactory;
 import org.springframework.cloud.gateway.filter.factory.SecureHeadersGatewayFilterFactory;
 import org.springframework.cloud.gateway.filter.factory.SecureHeadersProperties;
@@ -114,12 +116,14 @@ import org.springframework.cloud.gateway.route.RouteDefinitionWriter;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.RouteRefreshListener;
 import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
+import org.springframework.cloud.gateway.support.StringToZonedDateTimeConverter;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.convert.ConversionService;
 import org.springframework.core.env.Environment;
 import org.springframework.http.codec.ServerCodecConfigurer;
 import org.springframework.util.StringUtils;
@@ -253,6 +257,11 @@ public class GatewayAutoConfiguration {
 		}
 	}
 
+	@Bean
+	public StringToZonedDateTimeConverter stringToZonedDateTimeConverter() {
+		return new StringToZonedDateTimeConverter();
+	}
+
 	//TODO: remove when not needed anymore
 	// either https://jira.spring.io/browse/SPR-17291 or
 	// https://github.com/spring-projects/spring-boot/issues/14520 needs to be fixed
@@ -291,10 +300,13 @@ public class GatewayAutoConfiguration {
 
 	@Bean
 	public RouteLocator routeDefinitionRouteLocator(GatewayProperties properties,
-												   List<GatewayFilterFactory> GatewayFilters,
-												   List<RoutePredicateFactory> predicates,
-												   RouteDefinitionLocator routeDefinitionLocator) {
-		return new RouteDefinitionRouteLocator(routeDefinitionLocator, predicates, GatewayFilters, properties);
+													List<GatewayFilterFactory> GatewayFilters,
+													List<RoutePredicateFactory> predicates,
+													RouteDefinitionLocator routeDefinitionLocator,
+													@Qualifier("webFluxConversionService")
+													ConversionService conversionService) {
+		return new RouteDefinitionRouteLocator(routeDefinitionLocator, predicates, GatewayFilters,
+				properties, conversionService);
 	}
 
 	@Bean
@@ -501,6 +513,11 @@ public class GatewayAutoConfiguration {
 		public HystrixGatewayFilterFactory hystrixGatewayFilterFactory(ObjectProvider<DispatcherHandler> dispatcherHandler) {
 			return new HystrixGatewayFilterFactory(dispatcherHandler);
 		}
+
+		@Bean
+		public FallbackHeadersGatewayFilterFactory fallbackHeadersGatewayFilterFactory() {
+			return new FallbackHeadersGatewayFilterFactory();
+		}
 	}
 
 	@Bean
@@ -540,13 +557,14 @@ public class GatewayAutoConfiguration {
 
 	@Bean(name = PrincipalNameKeyResolver.BEAN_NAME)
 	@ConditionalOnBean(RateLimiter.class)
+	@ConditionalOnMissingBean(KeyResolver.class)
 	public PrincipalNameKeyResolver principalNameKeyResolver() {
 		return new PrincipalNameKeyResolver();
 	}
 
 	@Bean
 	@ConditionalOnBean({RateLimiter.class, KeyResolver.class})
-	public RequestRateLimiterGatewayFilterFactory requestRateLimiterGatewayFilterFactory(RateLimiter rateLimiter, PrincipalNameKeyResolver resolver) {
+	public RequestRateLimiterGatewayFilterFactory requestRateLimiterGatewayFilterFactory(RateLimiter rateLimiter, KeyResolver resolver) {
 		return new RequestRateLimiterGatewayFilterFactory(rateLimiter, resolver);
 	}
 
@@ -578,6 +596,11 @@ public class GatewayAutoConfiguration {
 	@Bean
 	public SetResponseHeaderGatewayFilterFactory setResponseHeaderGatewayFilterFactory() {
 		return new SetResponseHeaderGatewayFilterFactory();
+	}
+
+	@Bean
+	public RewriteResponseHeaderGatewayFilterFactory rewriteResponseHeaderGatewayFilterFactory() {
+		return new RewriteResponseHeaderGatewayFilterFactory();
 	}
 
 	@Bean

@@ -66,10 +66,40 @@ spring:
         - AddResponseHeader=X-Request-Foo, Bar
 
       # =====================================
+      - id: rewrite_response_header_test
+        uri: ${test.uri}
+        predicates:
+        - Host=**.rewriteresponseheader.org
+        - Path=/headers
+        filters:
+        - AddResponseHeader=X-Request-Foo, /42?user=ford&password=omg!what&flag=true
+        - RewriteResponseHeader=X-Request-Foo, password=[^&]+, password=***
+
+      # =====================================
       - id: forward_test
         uri: forward:/localcontroller
         predicates:
         - Host=**.forward.org
+
+      # =====================================
+      - id: host_backwards_compatible_test
+        uri: ${test.uri}
+        predicates:
+          - name: Host
+            args:
+              pattern: '**.hostpatternarg.org'
+
+      # =====================================
+      - id: host_backwards_compatible_shortcut_test
+        uri: ${test.uri}
+        predicates:
+        - Host=**.hostpatternshortcut.org
+
+      # =====================================
+      - id: host_multi_test
+        uri: ${test.uri}
+        predicates:
+        - Host=**.hostmulti1.org,**.hostmulti2.org
 
       # =====================================
       - id: hystrix_failure_test
@@ -89,6 +119,17 @@ spring:
           args:
             name: fallbackcmd
             fallbackUri: forward:/fallbackcontroller
+
+      # =====================================
+      - id: hystrix_exception_fallback_test
+        uri: ${test.uri}
+        predicates:
+        - Host=**.hystrixexceptionfallback.org
+        filters:
+        - name: Hystrix
+          args:
+            name: fallbackcmd
+            fallbackUri: forward:/exceptionFallback
 
       # =====================================
       - id: hystrix_success_test
@@ -142,6 +183,15 @@ spring:
         filters:
         - SetStatus=404
 
+        # =====================================
+      - id: path_multi
+        uri: ${test.uri}
+        predicates:
+          - Host=**.pathmulti.org
+          - Path=/anything/multi1{num},/anything/multi2{num}
+        filters:
+          - SetPath=/anything/multi{num}
+
       # =====================================
       - id: redirect_to_test
         uri: ${test.uri}
@@ -194,6 +244,14 @@ spring:
         - Path=/foo/{segment}
         filters:
         - SetPath=/{segment}
+
+        # =====================================
+      - id: set_path_host_test
+        uri: ${test.uri}
+        predicates:
+          - Host={subdomain}.setpathhost.org
+        filters:
+          - SetPath=/{subdomain}
 
       # =====================================
       - id: strip_prefix_test
@@ -293,6 +351,7 @@ logging:
     org.springframework.cloud.gateway: TRACE
     org.springframework.http.server.reactive: DEBUG
     org.springframework.web.reactive: DEBUG
+    org.springframework.boot.autoconfigure.web: DEBUG
     reactor.netty: DEBUG
     redisratelimiter: DEBUG
 
